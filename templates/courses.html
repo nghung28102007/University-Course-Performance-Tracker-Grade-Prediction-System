@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Courses{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Course Management</h2>
+    <p class="page-subtitle">View all courses and their enrolled students</p>
+</div>
+
+<!-- Semester Filter -->
+<div class="semester-tabs" id="course-semester-filter">
+    {% for sem in semesters %}
+        <a href="{{ url_for('courses_page', semester_id=sem.id) }}"
+           class="semester-tab {% if current_semester == sem.id %}active{% endif %}">
+            {{ sem.name }}
+        </a>
+    {% endfor %}
+    <a href="{{ url_for('courses_page') }}"
+       class="semester-tab {% if current_semester is none %}active{% endif %}">
+        All
+    </a>
+</div>
+
+<!-- Courses Table -->
+<div class="card animate-in">
+    <div class="card-header">
+        <h3>📚 Courses — {{ semester_label }}</h3>
+        <span class="badge badge-accent">{{ courses|length }} courses</span>
+    </div>
+    <div class="card-body flush">
+        <table class="data-table" id="courses-table">
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Course Name</th>
+                    <th>Credits</th>
+                    <th>Semester</th>
+                    <th>Instructor</th>
+                    <th>Enrolled</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in courses %}
+                <tr>
+                    <td><span style="color: var(--accent-secondary); font-weight: 600;">{{ c.course_code }}</span></td>
+                    <td><strong>{{ c.name }}</strong></td>
+                    <td>{{ c.credits }}</td>
+                    <td>{{ c.semester_name }}</td>
+                    <td>{{ c.instructor_name or 'TBD' }}</td>
+                    <td><span class="badge badge-accent">{{ c.enrolled_count }} students</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

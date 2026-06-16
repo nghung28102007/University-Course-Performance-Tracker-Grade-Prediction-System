@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Students{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Student Management</h2>
+    <p class="page-subtitle">View student profiles, GPAs, and performance charts</p>
+</div>
+
+<!-- Student Selector -->
+<div style="display: flex; gap: 16px; margin-bottom: 28px; align-items: flex-end;">
+    <div class="form-group" style="margin-bottom: 0; flex: 1; max-width: 350px;">
+        <label class="form-label">Select Student</label>
+        <select class="form-select" id="student-select" onchange="window.location.href='{{ url_for('students_page') }}?student_id=' + this.value">
+            <option value="">— Select a student —</option>
+            {% for s in students %}
+                <option value="{{ s.id }}" {% if selected_student and selected_student.id == s.id %}selected{% endif %}>
+                    {{ s.student_code }} — {{ s.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; max-width: 200px;">
+        <label class="form-label">Semester</label>
+        <select class="form-select" id="semester-select" onchange="updateStudentPage()">
+            <option value="">All Semesters</option>
+            {% for sem in semesters %}
+                <option value="{{ sem.id }}" {% if current_semester == sem.id %}selected{% endif %}>{{ sem.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</div>
+
+{% if selected_student %}
+<!-- Student Profile Card -->
+<div class="card animate-in" style="margin-bottom: 24px;">
+    <div class="card-header">
+        <h3>👤 {{ selected_student.name }}</h3>
+        <span class="badge badge-accent">{{ selected_student.student_code }}</span>
+    </div>
+    <div class="card-body">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Overall GPA</div>
+                <div class="stat-value {% if gpa_info.gpa >= 3.0 %}success{% elif gpa_info.gpa >= 2.0 %}warning{% else %}danger{% endif %}">
+                    {{ "%.2f"|format(gpa_info.gpa) }}
+                </div>
+                <div class="stat-change">4.0 Scale</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Credits</div>
+                <div class="stat-value teal">{{ gpa_info.total_credits }}</div>
+                <div class="stat-change">Completed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Courses</div>
+                <div class="stat-value accent">{{ gpa_info.courses_count }}</div>
+                <div class="stat-change">Enrolled</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="charts-grid">
+    <div class="chart-container">
+        <div class="chart-title">📈 GPA Trend Across Semesters</div>
+        <img src="{{ url_for('static', filename='charts/' + charts.trend) }}?t={{ cache_bust }}" alt="GPA Trend">
+    </div>
+    <div class="chart-container">
+        <div class="chart-title">🎯 Performance Radar</div>
+        <img src="{{ url_for('static', filename='charts/' + charts.radar) }}?t={{ cache_bust }}" alt="Performance Radar">
+    </div>
+</div>
+
+<!-- Course Grades Table -->
+<div class="card animate-in">
+    <div class="card-header">
+        <h3>📋 Course Grades</h3>
+    </div>
+    <div class="card-body flush">
+        <table class="data-table" id="student-grades-table">
+            <thead>
+                <tr>
+                    <th>Course</th>
+                    <th>Code</th>
+                    <th>Semester</th>
+                    <th>Credits</th>
+                    <th>Final Grade</th>
+                    <th>GPA Points</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for g in course_grades %}
+                <tr>
+                    <td><strong>{{ g.course_name }}</strong></td>
+                    <td style="color: var(--text-secondary);">{{ g.course_code }}</td>
+                    <td>{{ g.semester_name }}</td>
+                    <td>{{ g.credits }}</td>
+                    <td style="font-weight: 700;">{{ "%.1f"|format(g.final_grade) if g.final_grade else 'N/A' }}</td>
+                    <td>
+                        <span style="color: {% if g.gpa_points >= 3.0 %}var(--success){% elif g.gpa_points >= 2.0 %}var(--warning){% else %}var(--danger){% endif %}; font-weight: 700;">
+                            {{ "%.1f"|format(g.gpa_points) }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if g.gpa_points >= 3.0 %}
+                            <span class="badge badge-success">Pass</span>
+                        {% elif g.gpa_points >= 1.0 %}
+                            <span class="badge badge-warning">Pass</span>
+                        {% else %}
+                            <span class="badge badge-danger">Fail</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% else %}
+<div class="card">
+    <div class="card-body">
+        <div class="empty-state">
+            <div class="empty-state-icon">👤</div>
+            <div class="empty-state-text">Select a student to view their profile</div>
+            <p style="color: var(--text-tertiary); font-size: 0.82rem;">Choose from the dropdown above to see GPA, grades, and performance charts.</p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+function updateStudentPage() {
+    const studentId = document.getElementById('student-select').value;
+    const semesterId = document.getElementById('semester-select').value;
+    let url = '{{ url_for("students_page") }}';
+    const params = [];
+    if (studentId) params.push('student_id=' + studentId);
+    if (semesterId) params.push('semester_id=' + semesterId);
+    if (params.length) url += '?' + params.join('&');
+    window.location.href = url;
+}
+</script>
+{% endblock %}

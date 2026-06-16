@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}AI Prediction{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>AI Grade Prediction</h2>
+    <p class="page-subtitle">Predict final grades using Linear Regression on midterm, assignments & attendance</p>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px;">
+    <!-- Prediction Form -->
+    <div class="card animate-in">
+        <div class="card-header"><h3>🤖 Predict Final Grade</h3></div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('prediction_page') }}">
+                <div class="form-group">
+                    <label class="form-label">Student</label>
+                    <select name="student_id" class="form-select" id="pred-student" required>
+                        <option value="">Select student</option>
+                        {% for s in students %}
+                        <option value="{{ s.id }}" {% if selected_student_id == s.id %}selected{% endif %}>{{ s.student_code }} — {{ s.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Course</label>
+                    <select name="course_id" class="form-select" id="pred-course" required>
+                        <option value="">Select course</option>
+                        {% for c in courses %}
+                        <option value="{{ c.id }}" {% if selected_course_id == c.id %}selected{% endif %}>{{ c.course_code }} — {{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">🔮 Predict Grade</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Result -->
+    <div class="animate-in">
+        {% if prediction %}
+        <div class="prediction-result">
+            <div class="prediction-label">Predicted Final Grade</div>
+            <div class="prediction-score">{{ "%.1f"|format(prediction.predicted_final) }}</div>
+            <div style="color: var(--text-secondary); font-size: 0.82rem; margin-bottom: 12px;">
+                Based on: Midterm {{ prediction.inputs.midterm }}, Assignment {{ prediction.inputs.assignment_avg }}, Attendance {{ prediction.inputs.attendance_rate }}%
+            </div>
+            {% if prediction.confidence is defined %}
+            <div class="prediction-confidence">R² Confidence: {{ "%.1f"|format(prediction.confidence * 100) }}%</div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="card" style="height: 100%;">
+            <div class="card-body" style="display: flex; align-items: center; justify-content: center; height: 100%;">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🔮</div>
+                    <div class="empty-state-text">Select a student and course</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Model Info -->
+{% if model_metrics %}
+<div class="card animate-in">
+    <div class="card-header"><h3>📊 Model Metrics</h3></div>
+    <div class="card-body">
+        <div class="metrics-grid">
+            <div class="metric-item">
+                <div class="metric-value">{{ model_metrics.samples }}</div>
+                <div class="metric-label">Training Samples</div>
+            </div>
+            <div class="metric-item">
+                <div class="metric-value">{{ model_metrics.mae | default('N/A') }}</div>
+                <div class="metric-label">Mean Abs Error</div>
+            </div>
+            <div class="metric-item">
+                <div class="metric-value">{{ model_metrics.r2 | default('N/A') }}</div>
+                <div class="metric-label">R² Score</div>
+            </div>
+            <div class="metric-item">
+                <div class="metric-value">{{ model_metrics.features | length }}</div>
+                <div class="metric-label">Features Used</div>
+            </div>
+        </div>
+        {% if model_metrics.coefficients %}
+        <div style="margin-top: 20px; padding: 16px; background: var(--bg-tertiary); border-radius: var(--radius-md);">
+            <div style="font-size: 0.78rem; color: var(--text-tertiary); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.04em;">Model Coefficients</div>
+            {% for feat, coef in model_metrics.coefficients.items() %}
+            <div style="display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.82rem;">
+                <span style="color: var(--text-secondary);">{{ feat }}</span>
+                <span style="color: var(--accent-secondary); font-weight: 600;">{{ coef }}</span>
+            </div>
+            {% endfor %}
+            <div style="display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.82rem; border-top: 1px solid var(--border-primary); margin-top: 4px; padding-top: 8px;">
+                <span style="color: var(--text-secondary);">intercept</span>
+                <span style="color: var(--accent-teal); font-weight: 600;">{{ model_metrics.intercept }}</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

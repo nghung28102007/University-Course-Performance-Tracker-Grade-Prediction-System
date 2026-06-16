@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Import Data{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Import Data</h2>
+    <p class="page-subtitle">Batch import grade sheets via CSV or JSON files</p>
+</div>
+
+<div class="card animate-in" style="margin-bottom: 24px;">
+    <div class="card-header"><h3>📁 Upload Grade Files</h3></div>
+    <div class="card-body">
+        <form action="{{ url_for('import_page') }}" method="POST" enctype="multipart/form-data">
+            <div class="file-upload" onclick="document.getElementById('file-input').click()" id="upload-zone">
+                <div class="file-upload-icon">📄</div>
+                <div class="file-upload-text">Click to select CSV or JSON files</div>
+                <div class="file-upload-hint">Required columns: student_code, course_code, assignment_type, score</div>
+                <input type="file" name="files" id="file-input" multiple accept=".csv,.json" style="display: none;">
+            </div>
+            <div style="margin-top: 20px;">
+                <button type="submit" class="btn btn-primary" id="import-btn">⬆️ Import Files</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if results %}
+<div class="card animate-in">
+    <div class="card-header">
+        <h3>📊 Import Results</h3>
+        <span class="badge badge-accent">{{ results.total_time_seconds }}s</span>
+    </div>
+    <div class="card-body flush">
+        <table class="data-table">
+            <thead><tr><th>File</th><th>Rows</th><th>Imported</th><th>Errors</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for f in results.files %}
+                <tr>
+                    <td><strong>{{ f.file }}</strong></td>
+                    <td>{{ f.total_rows | default(0) }}</td>
+                    <td style="color: var(--success); font-weight: 600;">{{ f.imported | default(0) }}</td>
+                    <td>{{ (f.errors|length) if f.errors else 0 }}</td>
+                    <td>
+                        {% if f.error %}<span class="badge badge-danger">Failed</span>
+                        {% else %}<span class="badge badge-success">Done</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

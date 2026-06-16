@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h2>Performance Dashboard</h2>
+    <p class="page-subtitle">Academic overview and analytics for Asia University</p>
+</div>
+
+<!-- Semester Tabs (Critical Filter — queries Semesters table directly) -->
+<div class="semester-tabs" id="semester-filter">
+    {% for sem in semesters %}
+        <a href="{{ url_for('dashboard', semester_id=sem.id) }}"
+           class="semester-tab {% if current_semester == sem.id %}active{% endif %}"
+           id="tab-sem-{{ sem.id }}">
+            {{ sem.name }}
+        </a>
+    {% endfor %}
+    <a href="{{ url_for('dashboard') }}"
+       class="semester-tab {% if current_semester is none %}active{% endif %}"
+       id="tab-sem-all">
+        All
+    </a>
+</div>
+
+<!-- Stats Grid -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Total Students</div>
+        <div class="stat-value accent">{{ stats.total_students }}</div>
+        <div class="stat-change">Enrolled & active</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Courses</div>
+        <div class="stat-value teal">{{ stats.total_courses }}</div>
+        <div class="stat-change">{{ semester_label }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Average GPA</div>
+        <div class="stat-value {% if stats.avg_gpa >= 3.0 %}success{% elif stats.avg_gpa >= 2.0 %}warning{% else %}danger{% endif %}">{{ "%.2f"|format(stats.avg_gpa) }}</div>
+        <div class="stat-change">4.0 Scale</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">At-Risk Students</div>
+        <div class="stat-value {% if stats.at_risk_count == 0 %}success{% else %}danger{% endif %}">{{ stats.at_risk_count }}</div>
+        <div class="stat-change">GPA &lt; 2.0</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Avg Score</div>
+        <div class="stat-value accent">{{ "%.1f"|format(stats.avg_score) }}</div>
+        <div class="stat-change">Out of 100</div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="charts-grid">
+    <div class="chart-container">
+        <div class="chart-title">📊 Grade Distribution</div>
+        <img src="{{ url_for('static', filename='charts/' + charts.histogram) }}?t={{ cache_bust }}" alt="Grade Distribution Histogram" id="chart-histogram">
+    </div>
+    <div class="chart-container">
+        <div class="chart-title">🏆 Class Rankings</div>
+        <img src="{{ url_for('static', filename='charts/' + charts.rankings) }}?t={{ cache_bust }}" alt="Class Rankings" id="chart-rankings">
+    </div>
+</div>
+
+<!-- Rankings Table -->
+<div class="card animate-in">
+    <div class="card-header">
+        <h3>🏅 Student Rankings — {{ semester_label }}</h3>
+    </div>
+    <div class="card-body flush">
+        <table class="data-table" id="rankings-table">
+            <thead>
+                <tr>
+                    <th>Rank</th>
+                    <th>Student</th>
+                    <th>Code</th>
+                    <th>GPA</th>
+                    <th>Avg Score</th>
+                    <th>Credits</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rankings %}
+                <tr>
+                    <td>
+                        <span class="rank-number {% if r.rank == 1 %}rank-1{% elif r.rank == 2 %}rank-2{% elif r.rank == 3 %}rank-3{% else %}rank-other{% endif %}">
+                            {{ r.rank }}
+                        </span>
+                    </td>
+                    <td><strong>{{ r.student_name }}</strong></td>
+                    <td style="color: var(--text-secondary);">{{ r.student_code }}</td>
+                    <td>
+                        <span style="font-weight: 700; color: {% if r.gpa >= 3.5 %}var(--success){% elif r.gpa >= 2.5 %}var(--accent-secondary){% elif r.gpa >= 2.0 %}var(--warning){% else %}var(--danger){% endif %};">
+                            {{ "%.2f"|format(r.gpa) }}
+                        </span>
+                    </td>
+                    <td>{{ "%.1f"|format(r.avg_score) }}</td>
+                    <td>{{ r.total_credits }}</td>
+                    <td>
+                        {% if r.gpa >= 3.5 %}
+                            <span class="badge badge-success">Excellent</span>
+                        {% elif r.gpa >= 2.5 %}
+                            <span class="badge badge-accent">Good</span>
+                        {% elif r.gpa >= 2.0 %}
+                            <span class="badge badge-warning">Fair</span>
+                        {% else %}
+                            <span class="badge badge-danger">At Risk</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="University Performance Tracker - Academic Management System with AI Grade Prediction">
+    <title>{% block title %}ACP Tracker{% endblock %} — University Performance Tracker</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <h1>
+                    <span class="brand-icon">📊</span>
+                    ACP Tracker
+                </h1>
+                <div class="brand-sub">Asia University · TEC004/05</div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">Overview</div>
+                    <a href="{{ url_for('dashboard') }}" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}" id="nav-dashboard">
+                        <span class="nav-icon">📈</span> Dashboard
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Academics</div>
+                    <a href="{{ url_for('students_page') }}" class="nav-link {% if active_page == 'students' %}active{% endif %}" id="nav-students">
+                        <span class="nav-icon">👤</span> Students
+                    </a>
+                    <a href="{{ url_for('courses_page') }}" class="nav-link {% if active_page == 'courses' %}active{% endif %}" id="nav-courses">
+                        <span class="nav-icon">📚</span> Courses
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Intelligence</div>
+                    <a href="{{ url_for('prediction_page') }}" class="nav-link {% if active_page == 'prediction' %}active{% endif %}" id="nav-prediction">
+                        <span class="nav-icon">🤖</span> AI Prediction
+                    </a>
+                </div>
+
+                <div class="nav-section">
+                    <div class="nav-section-title">Data</div>
+                    <a href="{{ url_for('import_page') }}" class="nav-link {% if active_page == 'import' %}active{% endif %}" id="nav-import">
+                        <span class="nav-icon">📁</span> Import Data
+                    </a>
+                </div>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-badge">
+                    <div class="user-avatar">{{ (session.get('user_name', 'A'))[0] | upper }}</div>
+                    <div class="user-info">
+                        <div class="user-name">{{ session.get('user_name', 'Admin') }}</div>
+                        <div class="user-role">{{ session.get('user_role', 'admin') }}</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">{{ message }}</div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
