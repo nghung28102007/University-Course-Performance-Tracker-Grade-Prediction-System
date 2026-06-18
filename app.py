@@ -389,4 +389,6 @@ def logout():
 
 
 if __name__ == "__main__":
-    app.run(host=config.HOST, port=config.PORT, debug=True)
+    port = int(os.environ.get("PORT", config.PORT))
+    debug = os.environ.get("FLASK_DEBUG", "true").lower() == "true"
+    app.run(host="0.0.0.0", port=port, debug=debug)
