@@ -38,6 +38,14 @@ def score_to_scale10(score):
     """Convert a 0-100 score to Vietnamese Scale 10."""
     return round(score / 10, 1)
 
+# Grading scheme per course (SP1 polymorphism: weighted | curved | passfail)
+GRADING_SCHEMES = {
+    "CS101": "weighted",
+    "MATH101": "curved",
+    "PE101": "passfail",  # demo mapping if course added
+    "SE101": "passfail",
+}
+
 # Flask
 SECRET_KEY = os.environ.get("SECRET_KEY", "hung-acp-2026-secret")
 HOST = "127.0.0.1"

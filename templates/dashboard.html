@@ -46,9 +46,14 @@
         <div class="stat-change">GPA &lt; 2.0</div>
     </div>
     <div class="stat-card">
-        <div class="stat-label">Avg Score</div>
-        <div class="stat-value accent">{{ "%.1f"|format(stats.avg_score) }}</div>
-        <div class="stat-change">Out of 100</div>
+        <div class="stat-label">ML At-Risk Alerts</div>
+        <div class="stat-value {% if stats.ml_at_risk_count == 0 %}success{% else %}danger{% endif %}">{{ stats.ml_at_risk_count }}</div>
+        <div class="stat-change">Predicted final &lt; 60</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Pass Rate</div>
+        <div class="stat-value success">{{ stats.pass_rate }}%</div>
+        <div class="stat-change">SP4 Analytics</div>
     </div>
 </div>
 
@@ -116,4 +121,37 @@
         </table>
     </div>
 </div>
+
+{% if ml_at_risk %}
+<div class="card animate-in" style="margin-top: 24px;">
+    <div class="card-header">
+        <h3>🤖 ML At-Risk Alerts (SP6)</h3>
+        <span class="badge badge-danger">{{ ml_at_risk|length }} alerts</span>
+    </div>
+    <div class="card-body flush">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Student</th>
+                    <th>Course</th>
+                    <th>Predicted Final</th>
+                    <th>Confidence (R²)</th>
+                    <th>Alert</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in ml_at_risk[:10] %}
+                <tr>
+                    <td><strong>{{ a.student_name }}</strong> ({{ a.student_code }})</td>
+                    <td>{{ a.course_code }} — {{ a.course_name }}</td>
+                    <td style="color: var(--danger); font-weight: 700;">{{ "%.1f"|format(a.predicted_final) }}</td>
+                    <td>{{ "%.1f"|format(a.confidence * 100) }}%</td>
+                    <td><span class="badge badge-danger">{{ a.alert }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 {% endblock %}

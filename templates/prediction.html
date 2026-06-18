@@ -45,6 +45,11 @@
             <div style="color: var(--text-secondary); font-size: 0.82rem; margin-bottom: 12px;">
                 Based on: Midterm {{ prediction.inputs.midterm }}, Assignment {{ prediction.inputs.assignment_avg }}, Attendance {{ prediction.inputs.attendance_rate }}%
             </div>
+        {% if prediction.predicted_final < 60 %}
+        <div class="alert alert-danger" style="margin-top: 16px;">
+            ⚠ <strong>ML At-Risk Alert (SP6):</strong> Predicted final grade is below 60. Student may need intervention.
+        </div>
+        {% endif %}
             {% if prediction.confidence is defined %}
             <div class="prediction-confidence">R² Confidence: {{ "%.1f"|format(prediction.confidence * 100) }}%</div>
             {% endif %}

@@ -1,11 +1,9 @@
 """
-Analytics engine using Pandas for GPA calculation, rankings, correlations, and at-risk detection.
-Uses GradeBook polymorphism (SP1) for course grade calculation.
+Analytics engine using Pandas for GPA calculation, rankings, and at-risk detection.
 """
 import pandas as pd
 from database.connection import get_connection
 from config import score_to_gpa4
-from models.gradebook import calculate_enrollment_grade
 
 
 def _load_grade_data(semester_id=None):
@@ -44,9 +42,23 @@ def _load_grade_data(semester_id=None):
     return df
 
 
+def _calculate_course_grade(group):
+    """Calculate weighted grade for a single enrollment group."""
+    total = 0.0
+    weight_sum = 0.0
+    for _, row in group.iterrows():
+        if pd.notna(row["score"]):
+            total += (row["score"] / row["max_score"]) * row["weight"]
+            weight_sum += row["weight"]
+    if weight_sum == 0:
+        return None
+    return round((total / weight_sum) * 100, 2)
+
+
 def get_student_course_grades(semester_id=None):
     """
-    Returns a DataFrame with one row per student-course using polymorphic GradeBook.
+    Returns a DataFrame with one row per student-course:
+    student_id, student_name, course_code, course_name, credits, semester_name, final_grade, gpa_points
     """
     df = _load_grade_data(semester_id)
     if df.empty:
@@ -54,14 +66,11 @@ def get_student_course_grades(semester_id=None):
 
     results = []
     grouped = df.groupby(["student_id", "student_code", "student_name", "course_id",
-                           "course_code", "course_name", "credits", "semester_id",
-                           "semester_name", "enrollment_id"])
+                           "course_code", "course_name", "credits", "semester_id", "semester_name"])
 
-    for keys, _group in grouped:
-        (student_id, student_code, student_name, course_id, course_code,
-         course_name, credits, sem_id, sem_name, enrollment_id) = keys
-
-        final_grade = calculate_enrollment_grade(enrollment_id, course_code, course_id)
+    for keys, group in grouped:
+        student_id, student_code, student_name, course_id, course_code, course_name, credits, sem_id, sem_name = keys
+        final_grade = _calculate_course_grade(group)
         gpa_point = score_to_gpa4(final_grade) if final_grade is not None else 0.0
 
         results.append({
@@ -74,7 +83,6 @@ def get_student_course_grades(semester_id=None):
             "credits": credits,
             "semester_id": sem_id,
             "semester_name": sem_name,
-            "enrollment_id": enrollment_id,
             "final_grade": final_grade,
             "gpa_points": gpa_point,
         })
@@ -83,7 +91,10 @@ def get_student_course_grades(semester_id=None):
 
 
 def calculate_gpa(student_id, semester_id=None):
-    """Calculate weighted GPA for a student (credit-weighted average of GPA points)."""
+    """
+    Calculate weighted GPA for a student (credit-weighted average of GPA points).
+    Returns dict with gpa, total_credits, courses_count.
+    """
     df = get_student_course_grades(semester_id)
     if df.empty:
         return {"gpa": 0.0, "total_credits": 0, "courses_count": 0}
@@ -94,6 +105,7 @@ def calculate_gpa(student_id, semester_id=None):
 
     weighted_sum = (student_df["gpa_points"] * student_df["credits"]).sum()
     total_credits = student_df["credits"].sum()
+
     gpa = round(weighted_sum / total_credits, 2) if total_credits > 0 else 0.0
 
     return {
@@ -104,11 +116,15 @@ def calculate_gpa(student_id, semester_id=None):
 
 
 def class_rankings(semester_id=None):
-    """Return students ranked by GPA (descending)."""
+    """
+    Return students ranked by GPA (descending).
+    Returns list of dicts: [{student_id, student_name, student_code, gpa, rank}, ...]
+    """
     df = get_student_course_grades(semester_id)
     if df.empty:
         return []
 
+    # Calculate GPA per student
     rankings = []
     for student_id in df["student_id"].unique():
         student_df = df[df["student_id"] == student_id]
@@ -118,6 +134,7 @@ def class_rankings(semester_id=None):
         weighted_sum = (student_df["gpa_points"] * student_df["credits"]).sum()
         total_credits = student_df["credits"].sum()
         gpa = round(weighted_sum / total_credits, 2) if total_credits > 0 else 0.0
+
         avg_score = round(student_df["final_grade"].mean(), 2) if not student_df["final_grade"].isna().all() else 0.0
 
         rankings.append({
@@ -129,93 +146,20 @@ def class_rankings(semester_id=None):
             "total_credits": int(total_credits),
         })
 
+    # Sort by GPA descending
     rankings.sort(key=lambda x: x["gpa"], reverse=True)
+
+    # Assign ranks
     for i, r in enumerate(rankings, 1):
         r["rank"] = i
+
     return rankings
 
 
 def at_risk_students(semester_id=None, threshold=2.0):
     """Return students with GPA below the threshold."""
-    return list(filter(lambda r: r["gpa"] < threshold, class_rankings(semester_id)))
-
-
-def pass_fail_rates(semester_id=None, pass_threshold=60.0):
-    """SP4: Calculate pass/fail rates across all course grades."""
-    df = get_student_course_grades(semester_id)
-    if df.empty:
-        return {"pass_count": 0, "fail_count": 0, "pass_rate": 0.0, "fail_rate": 0.0, "total": 0}
-
-    grades = df["final_grade"].dropna()
-    passed = (grades >= pass_threshold).sum()
-    failed = len(grades) - passed
-    total = len(grades)
-    return {
-        "pass_count": int(passed),
-        "fail_count": int(failed),
-        "pass_rate": round(passed / total * 100, 1) if total else 0.0,
-        "fail_rate": round(failed / total * 100, 1) if total else 0.0,
-        "total": total,
-    }
-
-
-def correlation_analysis(semester_id=None):
-    """SP4: Correlation between attendance, midterm, assignment and final exam scores."""
-    df = _load_grade_data(semester_id)
-    if df.empty:
-        return {}
-
-    pivoted = df.pivot_table(
-        index="enrollment_id", columns="assignment_type", values="score", aggfunc="mean",
-    ).reset_index()
-
-    with get_connection() as conn:
-        att_query = """
-            SELECT e.id AS enrollment_id,
-                   COUNT(*) AS total_sessions,
-                   SUM(CASE WHEN a.status IN ('present','late') THEN 1 ELSE 0 END) AS attended
-            FROM Attendance a
-            JOIN Enrollments e ON a.enrollment_id = e.id
-            JOIN Courses c ON e.course_id = c.id
-            WHERE e.status = 'active'
-        """
-        params = []
-        if semester_id:
-            att_query += " AND c.semester_id = ?"
-            params.append(semester_id)
-        att_query += " GROUP BY e.id"
-        att_df = pd.read_sql_query(att_query, conn, params=params or None)
-
-    if not att_df.empty:
-        att_df["attendance_rate"] = att_df["attended"] / att_df["total_sessions"] * 100
-        pivoted = pivoted.merge(att_df[["enrollment_id", "attendance_rate"]], on="enrollment_id", how="left")
-
-    pivoted = pivoted.dropna(subset=["final"] if "final" in pivoted.columns else [])
-    if pivoted.empty or "final" not in pivoted.columns:
-        return {}
-
-    correlations = {}
-    for col in ("midterm", "assignment", "attendance_rate"):
-        if col in pivoted.columns and pivoted[col].notna().sum() > 1:
-            correlations[f"{col}_vs_final"] = round(float(pivoted[col].corr(pivoted["final"])), 4)
-
-    return correlations
-
-
-def course_difficulty_stats(semester_id=None):
-    """SP4/SP5: Average score per course for difficulty comparison."""
-    df = get_student_course_grades(semester_id)
-    if df.empty:
-        return []
-
-    grouped = df.groupby(["course_code", "course_name"]).agg(
-        avg_score=("final_grade", "mean"),
-        student_count=("student_id", "nunique"),
-    ).reset_index()
-
-    grouped["avg_score"] = grouped["avg_score"].round(1)
-    grouped = grouped.sort_values("avg_score")
-    return grouped.to_dict("records")
+    rankings = class_rankings(semester_id)
+    return list(filter(lambda r: r["gpa"] < threshold, rankings))
 
 
 def get_all_grades_flat(semester_id=None):
@@ -231,18 +175,22 @@ def get_student_semester_gpas(student_id):
     with get_connection() as conn:
         semesters = conn.execute("SELECT * FROM Semesters ORDER BY id").fetchall()
 
-    return [
-        {
+    trend = []
+    for sem in semesters:
+        gpa_info = calculate_gpa(student_id, sem["id"])
+        trend.append({
             "semester_id": sem["id"],
             "semester_name": sem["name"],
-            "gpa": calculate_gpa(student_id, sem["id"])["gpa"],
-        }
-        for sem in semesters
-    ]
+            "gpa": gpa_info["gpa"],
+        })
+    return trend
 
 
 def get_student_performance_radar(student_id, semester_id=None):
-    """Get performance metrics for radar chart."""
+    """
+    Get performance metrics for radar chart:
+    [Assignment Avg, Midterm Avg, Final Avg, Attendance Rate, GPA]
+    """
     df = _load_grade_data(semester_id)
     if df.empty:
         return None
@@ -251,10 +199,12 @@ def get_student_performance_radar(student_id, semester_id=None):
     if student_df.empty:
         return None
 
+    # Average by assignment type
     assignment_avg = student_df[student_df["assignment_type"] == "assignment"]["score"].mean()
     midterm_avg = student_df[student_df["assignment_type"] == "midterm"]["score"].mean()
     final_avg = student_df[student_df["assignment_type"] == "final"]["score"].mean()
 
+    # Attendance rate
     with get_connection() as conn:
         query = """
             SELECT a.status, COUNT(*) as cnt
@@ -272,6 +222,7 @@ def get_student_performance_radar(student_id, semester_id=None):
     total_sessions = sum(r["cnt"] for r in attendance)
     present = sum(r["cnt"] for r in attendance if r["status"] in ("present", "late"))
     attendance_rate = round((present / total_sessions) * 100, 1) if total_sessions > 0 else 0
+
     gpa_info = calculate_gpa(student_id, semester_id)
 
     return {
@@ -281,6 +232,6 @@ def get_student_performance_radar(student_id, semester_id=None):
             round(midterm_avg, 1) if pd.notna(midterm_avg) else 0,
             round(final_avg, 1) if pd.notna(final_avg) else 0,
             attendance_rate,
-            round(gpa_info["gpa"] * 25, 1),
+            round(gpa_info["gpa"] * 25, 1),  # Scale GPA to 0-100 range for radar
         ],
     }

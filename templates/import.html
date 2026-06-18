@@ -8,6 +8,27 @@
 </div>
 
 <div class="card animate-in" style="margin-bottom: 24px;">
+    <div class="card-header"><h3>⬇️ Export Reports (SP2)</h3></div>
+    <div class="card-body">
+        <p style="color: var(--text-secondary); margin-bottom: 16px;">Download grade reports as JSON or CSV.</p>
+        <a href="{{ url_for('export_grades_json_route') }}" class="btn btn-primary" style="margin-right: 8px;">Export Grades JSON</a>
+        <a href="{{ url_for('export_grades_csv_route') }}" class="btn btn-primary" style="margin-right: 8px;">Export Grades CSV</a>
+        <a href="{{ url_for('export_rankings_json_route') }}" class="btn btn-primary">Export Rankings JSON</a>
+    </div>
+</div>
+
+<div class="card animate-in" style="margin-bottom: 24px;">
+    <div class="card-header"><h3>🌐 Adaptive Web Crawl</h3></div>
+    <div class="card-body">
+        <p style="color: var(--text-secondary); margin-bottom: 16px;">
+            Quét đa nguồn từ Internet (ưu tiên Production → Mock dự phòng) và đồng bộ điểm vào hệ thống.
+        </p>
+        <button type="button" class="btn btn-primary" id="crawl-btn">🔄 Refresh from Web</button>
+        <span id="crawl-status" style="margin-left: 12px; color: var(--text-secondary);"></span>
+    </div>
+</div>
+
+<div class="card animate-in" style="margin-bottom: 24px;">
     <div class="card-header"><h3>📁 Upload Grade Files</h3></div>
     <div class="card-body">
         <form action="{{ url_for('import_page') }}" method="POST" enctype="multipart/form-data">
@@ -51,4 +72,29 @@
     </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('crawl-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('crawl-btn');
+    const status = document.getElementById('crawl-status');
+    btn.disabled = true;
+    status.textContent = 'Đang cào dữ liệu...';
+    try {
+        const res = await fetch('/api/refresh-data');
+        const data = await res.json();
+        if (res.ok && data.status === 'success') {
+            const label = data.data_source === 'Production-Real' ? '✓ Production-Real' : '⚠ Backup-Mock';
+            status.textContent = `${label} — ${data.records_synced} bản ghi đồng bộ (${data.source_label})`;
+        } else {
+            status.textContent = 'Lỗi: ' + (data.message || 'unknown');
+        }
+    } catch (e) {
+        status.textContent = 'Lỗi kết nối: ' + e;
+    } finally {
+        btn.disabled = false;
+    }
+});
+</script>
 {% endblock %}

@@ -218,52 +218,5 @@ class PredictorModel:
         return self.predict(midterm_score, assignment_avg, attendance_rate)
 
 
-    def ml_at_risk_students(self, predicted_threshold=60.0, semester_id=None):
-        """
-        SP6: Identify at-risk students using ML-predicted final grades.
-        Returns list of dicts with student/course info and predicted final.
-        """
-        if not self.is_trained:
-            self.train(semester_id)
-
-        at_risk = []
-        with get_connection() as conn:
-            query = """
-                SELECT e.id AS enrollment_id, e.student_id, e.course_id,
-                       s.student_code, s.name AS student_name,
-                       c.course_code, c.name AS course_name
-                FROM Enrollments e
-                JOIN Students s ON e.student_id = s.id
-                JOIN Courses c ON e.course_id = c.id
-                WHERE e.status = 'active'
-            """
-            params = ()
-            if semester_id:
-                query += " AND c.semester_id = ?"
-                params = (semester_id,)
-            enrollments = conn.execute(query, params).fetchall()
-
-        for enr in enrollments:
-            result = self.predict_for_student(enr["student_id"], enr["course_id"])
-            if "error" in result:
-                continue
-            predicted = result["predicted_final"]
-            if predicted < predicted_threshold:
-                at_risk.append({
-                    "student_id": enr["student_id"],
-                    "student_code": enr["student_code"],
-                    "student_name": enr["student_name"],
-                    "course_id": enr["course_id"],
-                    "course_code": enr["course_code"],
-                    "course_name": enr["course_name"],
-                    "predicted_final": predicted,
-                    "confidence": result.get("confidence", 0),
-                    "alert": "ML At-Risk",
-                })
-
-        at_risk.sort(key=lambda x: x["predicted_final"])
-        return at_risk
-
-
 # Singleton predictor
 predictor = PredictorModel()

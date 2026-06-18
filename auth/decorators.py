@@ -9,15 +9,15 @@ from flask import session, abort, redirect, url_for
 def require_role(*allowed_roles):
     """
     Decorator that restricts route access to specific roles.
-    Usage: @require_role('admin', 'instructor')
+    Admin always has access. Usage: @require_role('instructor', 'student')
     """
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             user_role = session.get("user_role", "guest")
-            if user_role not in allowed_roles:
-                abort(403)
-            return func(*args, **kwargs)
+            if user_role == "admin" or user_role in allowed_roles:
+                return func(*args, **kwargs)
+            abort(403)
         return wrapper
     return decorator
 
