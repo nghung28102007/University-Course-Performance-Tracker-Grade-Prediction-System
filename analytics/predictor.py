@@ -243,23 +243,37 @@ class PredictorModel:
                 params = (semester_id,)
             enrollments = conn.execute(query, params).fetchall()
 
+        student_alerts = {}
         for enr in enrollments:
             result = self.predict_for_student(enr["student_id"], enr["course_id"])
             if "error" in result:
                 continue
             predicted = result["predicted_final"]
             if predicted < predicted_threshold:
-                at_risk.append({
-                    "student_id": enr["student_id"],
-                    "student_code": enr["student_code"],
-                    "student_name": enr["student_name"],
-                    "course_id": enr["course_id"],
-                    "course_code": enr["course_code"],
-                    "course_name": enr["course_name"],
-                    "predicted_final": predicted,
-                    "confidence": result.get("confidence", 0),
-                    "alert": "ML At-Risk",
-                })
+                sid = enr["student_id"]
+                if sid not in student_alerts:
+                    student_alerts[sid] = {
+                        "student_id": sid,
+                        "student_code": enr["student_code"],
+                        "student_name": enr["student_name"],
+                        "courses": [],
+                        "min_predicted": predicted,
+                        "confidence": result.get("confidence", 0),
+                        "alert": "ML At-Risk",
+                    }
+                
+                # Add course to list
+                course_str = f'{enr["course_code"]} ({round(predicted, 1)})'
+                student_alerts[sid]["courses"].append(course_str)
+                if predicted < student_alerts[sid]["min_predicted"]:
+                    student_alerts[sid]["min_predicted"] = predicted
+
+        # Format for UI: join courses into a single string
+        at_risk = []
+        for sid, data in student_alerts.items():
+            data["course_name"] = ", ".join(data["courses"])
+            data["predicted_final"] = data["min_predicted"]
+            at_risk.append(data)
 
         at_risk.sort(key=lambda x: x["predicted_final"])
         return at_risk

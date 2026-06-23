@@ -153,7 +153,7 @@
                 {% for a in ml_at_risk[:10] %}
                 <tr>
                     <td><strong>{{ a.student_name }}</strong> ({{ a.student_code }})</td>
-                    <td>{{ a.course_code }} — {{ a.course_name }}</td>
+                    <td>{{ a.course_name }}</td>
                     <td style="color: var(--danger); font-weight: 700;">{{ "%.1f"|format(a.predicted_final) }}</td>
                     <td>{{ "%.1f"|format(a.confidence * 100) }}%</td>
                     <td><span class="badge badge-danger">{{ a.alert }}</span></td>
@@ -244,6 +244,21 @@
                     if (hist && data.charts.histogram) hist.src = data.charts.histogram;
                     if (rank && data.charts.rankings) rank.src = data.charts.rankings;
                 }
+                
+                // Update ML At-Risk table dynamically
+                const mlBody = document.querySelector('.card:last-child tbody');
+                if (mlBody && data.ml_at_risk) {
+                    mlBody.innerHTML = data.ml_at_risk.map(a => `
+                        <tr>
+                            <td><strong>${a.student_name}</strong> <span class="text-secondary">(${a.student_code})</span></td>
+                            <td>${a.course_name}</td>
+                            <td class="stat-value danger">${Number(a.predicted_final).toFixed(1)}</td>
+                            <td>${Number(a.confidence * 100).toFixed(1)}%</td>
+                            <td><span class="badge badge-danger">${a.alert}</span></td>
+                        </tr>
+                    `).join('');
+                }
+
                 const atRisk65 = (data.predictions_65 || []).filter(p => p.status === 'At-risk').length;
                 status.textContent = `✓ ${data.records_crawled} bản ghi cào · ${data.records_synced} lưu DB · ${data.normalized_synced} đồng bộ · ${atRisk65} cảnh báo mốc 65`;
             } else {

@@ -120,8 +120,9 @@ def ranking_bar_chart(rankings, semester_label="All Semesters", filename="rankin
                 fontsize=14, color=TEXT_COLOR, transform=ax.transAxes)
         return _save_fig(fig, filename)
 
-    names = [r["student_name"] for r in reversed(rankings)]
-    gpas = [r["gpa"] for r in reversed(rankings)]
+    top_rankings = rankings[:15]
+    names = [r["student_name"] for r in reversed(top_rankings)]
+    gpas = [r["gpa"] for r in reversed(top_rankings)]
     colors = [SUCCESS if g >= 3.5 else ACCENT if g >= 2.5 else WARNING if g >= 2.0 else DANGER for g in gpas]
     ax.barh(names, gpas, color=colors, edgecolor=DARK_BG, height=0.6, alpha=0.85)
     ax.set_xlim(0, 4.2)
