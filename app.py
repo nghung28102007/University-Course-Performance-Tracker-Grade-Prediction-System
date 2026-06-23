@@ -33,22 +33,60 @@ from pipeline.importer import batch_import
 from pipeline.exporter import (
     export_grades_json, export_grades_csv, export_rankings_json, get_export_dir,
 )
-from crawler import execute_adaptive_crawl, sync_crawl_to_normalized
+from crawler import (
+    execute_web_crawl,
+    sync_crawled_data_to_db,
+    sync_crawl_to_normalized,
+    ensure_crawl_grades_table,
+)
+import importlib.util
+
+_milestone_spec = importlib.util.spec_from_file_location(
+    "milestone_analytics", os.path.join(config.BASE_DIR, "analytics.py")
+)
+_milestone_analytics = importlib.util.module_from_spec(_milestone_spec)
+_milestone_spec.loader.exec_module(_milestone_analytics)
+load_data = _milestone_analytics.load_data
+build_and_predict_model = _milestone_analytics.build_and_predict_model
 from auth.decorators import require_role, login_required, set_session_role
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 
+# ── Custom JSON Provider: tự động chuyển numpy int64/float64 → Python native ──
+# Nguyên nhân lỗi "Object of type int64 is not JSON serializable":
+# Pandas/Numpy trả về kiểu dữ liệu riêng (numpy.int64, numpy.float64) mà Flask
+# không tự chuyển đổi được sang JSON. Đăng ký encoder toàn cục để xử lý triệt để.
+import numpy as np
+from flask.json.provider import DefaultJSONProvider
+
+class NumpySafeJSONProvider(DefaultJSONProvider):
+    """JSON provider xử lý numpy data types cho Flask jsonify()."""
+    def default(self, obj):
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+app.json_provider_class = NumpySafeJSONProvider
+app.json = NumpySafeJSONProvider(app)
+
 init_db()
 seed_data()
+ensure_crawl_grades_table()
 predictor.train()
 
 
 def get_semesters():
+    """Truy vấn danh sách tất cả học kỳ, sắp xếp theo ID tăng dần."""
     return execute_query("SELECT * FROM Semesters ORDER BY id", fetchall=True)
 
 
 def _semester_label(semester_id):
+    """Trả về tên học kỳ theo ID, hoặc 'All Semesters' nếu không chỉ định."""
     if semester_id:
         sem = execute_query("SELECT name FROM Semesters WHERE id=?", (semester_id,), fetchone=True)
         return sem["name"] if sem else "Unknown"
@@ -62,16 +100,8 @@ def _student_scope_id():
     return None
 
 
-# ─── DASHBOARD ───────────────────────────────────────────────
-@app.route("/")
-@login_required
-@require_role("admin", "instructor", "student")
-def dashboard():
-    semester_id = request.args.get("semester_id", type=int)
-    semesters = get_semesters()
-    cache_bust = str(int(time.time()))
-    semester_label = _semester_label(semester_id)
-
+def _dashboard_snapshot(semester_id=None):
+    """Build rankings, stats, and ML alerts for dashboard JSON/AJAX refresh."""
     rankings_data = class_rankings(semester_id)
     scope_id = _student_scope_id()
     if scope_id:
@@ -101,14 +131,39 @@ def dashboard():
     stats = {
         "total_students": total_students,
         "total_courses": total_courses,
-        "avg_gpa": avg_gpa,
+        "avg_gpa": round(avg_gpa, 2),
         "at_risk_count": len(at_risk),
-        "avg_score": sum(grades) / len(grades) if grades else 0,
+        "avg_score": round(sum(grades) / len(grades), 1) if grades else 0,
         "pass_rate": pf["pass_rate"],
         "ml_at_risk_count": len(ml_at_risk),
     }
+    return {
+        "rankings": rankings_data,
+        "stats": stats,
+        "ml_at_risk": ml_at_risk,
+        "semester_label": _semester_label(semester_id),
+    }
 
-    hist_file = grade_distribution_histogram(grades, semester_label, f"hist_{semester_id or 'all'}.png")
+
+# ─── DASHBOARD ───────────────────────────────────────────────
+@app.route("/")
+@login_required
+@require_role("admin", "instructor", "student")
+def dashboard():
+    """Trang chủ Dashboard: hiển thị rankings, thống kê tổng quan, biểu đồ và cảnh báo ML."""
+    semester_id = request.args.get("semester_id", type=int)
+    semesters = get_semesters()
+    cache_bust = str(int(time.time()))
+    semester_label = _semester_label(semester_id)
+
+    snapshot = _dashboard_snapshot(semester_id)
+    rankings_data = snapshot["rankings"]
+    stats = snapshot["stats"]
+    ml_at_risk = snapshot["ml_at_risk"]
+
+    hist_file = grade_distribution_histogram(
+        get_all_grades_flat(semester_id), semester_label, f"hist_{semester_id or 'all'}.png"
+    )
     rank_file = ranking_bar_chart(rankings_data, semester_label, f"rank_{semester_id or 'all'}.png")
 
     return render_template(
@@ -130,6 +185,7 @@ def dashboard():
 @login_required
 @require_role("admin", "instructor")
 def analytics_page():
+    """Trang phân tích nâng cao: Pass/Fail rates, tương quan, độ khó môn học (chỉ Admin/Instructor)."""
     semester_id = request.args.get("semester_id", type=int)
     semesters = get_semesters()
     cache_bust = str(int(time.time()))
@@ -162,6 +218,7 @@ def analytics_page():
 @login_required
 @require_role("admin", "instructor", "student")
 def students_page():
+    """Trang hồ sơ sinh viên: GPA, điểm từng môn, biểu đồ xu hướng và radar."""
     student_id = request.args.get("student_id", type=int)
     semester_id = request.args.get("semester_id", type=int)
     semesters = get_semesters()
@@ -215,23 +272,25 @@ def students_page():
 @login_required
 @require_role("admin", "instructor", "student")
 def courses_page():
+    """Trang danh sách môn học: mã môn, tín chỉ, giảng viên, số SV đăng ký."""
     semester_id = request.args.get("semester_id", type=int)
     semesters = get_semesters()
     semester_label = _semester_label(semester_id)
     course_objects = Course.all(semester_id)
 
-    courses = []
-    for c in course_objects:
-        instructor = Instructor.from_db(c.instructor_id) if c.instructor_id else None
-        courses.append({
+    # FIX-5: Tối ưu bằng list comprehension thay vì vòng lặp for thủ công
+    courses = [
+        {
             "id": c.id,
             "course_code": c.course_code,
             "name": c.name,
             "credits": c.credits,
             "semester_name": c.get_semester_name(),
-            "instructor_name": instructor.name if instructor else "TBD",
+            "instructor_name": (lambda i: i.name if i else "TBD")(Instructor.from_db(c.instructor_id) if c.instructor_id else None),
             "enrolled_count": len(c.get_enrolled_students()),
-        })
+        }
+        for c in course_objects
+    ]
 
     return render_template(
         "courses.html",
@@ -248,6 +307,7 @@ def courses_page():
 @login_required
 @require_role("admin", "instructor", "student")
 def prediction_page():
+    """Trang dự đoán AI: chọn SV + môn học → dự đoán điểm cuối kỳ bằng ML model."""
     scope_id = _student_scope_id()
     students = Student.all()
     if scope_id:
@@ -287,6 +347,7 @@ def prediction_page():
 @login_required
 @require_role("admin", "instructor")
 def import_page():
+    """Trang nhập dữ liệu: upload file CSV/JSON, batch import vào DB (chỉ Admin/Instructor)."""
     results = None
     if request.method == "POST":
         files = request.files.getlist("files")
@@ -315,6 +376,7 @@ def import_page():
 @login_required
 @require_role("admin", "instructor")
 def export_grades_json_route():
+    """API xuất dữ liệu điểm dưới dạng file JSON để tải về."""
     semester_id = request.args.get("semester_id", type=int)
     payload = export_grades_json(semester_id)
     buf = io.BytesIO(json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8"))
@@ -326,6 +388,7 @@ def export_grades_json_route():
 @login_required
 @require_role("admin", "instructor")
 def export_grades_csv_route():
+    """API xuất dữ liệu điểm dưới dạng file CSV để tải về."""
     semester_id = request.args.get("semester_id", type=int)
     rows = export_grades_csv(semester_id)
     buf = io.StringIO()
@@ -342,6 +405,7 @@ def export_grades_csv_route():
 @login_required
 @require_role("admin", "instructor")
 def export_rankings_json_route():
+    """API xuất bảng xếp hạng GPA dưới dạng file JSON để tải về."""
     semester_id = request.args.get("semester_id", type=int)
     payload = export_rankings_json(semester_id)
     buf = io.BytesIO(json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8"))
@@ -349,21 +413,57 @@ def export_rankings_json_route():
                      download_name="rankings_export.json")
 
 
-# ─── ADAPTIVE WEB CRAWL ────────────────────────────────────────
-@app.route("/api/refresh-data", methods=["GET"])
+# ─── LIVE WEB CRAWL & SYNC ───────────────────────────────────
+@app.route("/api/refresh-data", methods=["POST"])
 @login_required
 @require_role("admin", "instructor")
 def refresh_data():
+    """API AJAX endpoint: cào dữ liệu web → đồng bộ DB → chạy AI → trả JSON snapshot."""
     try:
-        crawled_data, data_source, source_label = execute_adaptive_crawl()
-        records_synced = sync_crawl_to_normalized(crawled_data) if crawled_data else 0
-        if records_synced:
+        semester_id = None
+        if request.is_json and request.json:
+            semester_id = request.json.get("semester_id")
+        if semester_id is None:
+            semester_id = request.args.get("semester_id", type=int)
+
+        crawled_data = execute_web_crawl()
+        records_crawled = len(crawled_data) if crawled_data else 0
+        records_synced = sync_crawled_data_to_db(crawled_data)
+        normalized_synced = sync_crawl_to_normalized(crawled_data) if crawled_data else 0
+
+        if normalized_synced or records_synced:
             predictor.train()
+
+        df = load_data(config.DB_PATH)
+        predictions_65 = build_and_predict_model(df)
+
+        snapshot = _dashboard_snapshot(semester_id)
+        cache_bust = str(int(time.time()))
+        hist_file = grade_distribution_histogram(
+            get_all_grades_flat(semester_id),
+            snapshot["semester_label"],
+            f"hist_{semester_id or 'all'}.png",
+        )
+        rank_file = ranking_bar_chart(
+            snapshot["rankings"],
+            snapshot["semester_label"],
+            f"rank_{semester_id or 'all'}.png",
+        )
+
         return jsonify({
             "status": "success",
-            "data_source": data_source,
-            "source_label": source_label,
+            "records_crawled": records_crawled,
             "records_synced": records_synced,
+            "normalized_synced": normalized_synced,
+            "predictions_65": predictions_65,
+            "rankings": snapshot["rankings"],
+            "stats": snapshot["stats"],
+            "ml_at_risk": snapshot["ml_at_risk"],
+            "charts": {
+                "histogram": f"/static/charts/{hist_file}?t={cache_bust}",
+                "rankings": f"/static/charts/{rank_file}?t={cache_bust}",
+            },
+            "cache_bust": cache_bust,
         }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -372,6 +472,7 @@ def refresh_data():
 # ─── LOGIN (SP7 — Selenium test target) ─────────────────────
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    """Trang đăng nhập: chọn role (Admin/Instructor/Student) và tên để vào hệ thống."""
     if request.method == "POST":
         role = request.form.get("role", "student")
         name = request.form.get("name", "User")
@@ -384,6 +485,7 @@ def login():
 
 @app.route("/logout")
 def logout():
+    """Đăng xuất: xóa session và chuyển hướng về trang login."""
     session.clear()
     return redirect(url_for("login"))
 

@@ -79,7 +79,7 @@ class CurvedGrade(GradeBook):
 class PassFailGrade(GradeBook):
     """Pass/Fail grading: 100 if weighted score >= threshold, else 0."""
 
-    PASS_THRESHOLD = 60.0
+    PASS_THRESHOLD = 65.0
 
     def calculate_final_grade(self, enrollment_id, course_id=None):
         raw = self.get_raw_weighted_score(enrollment_id)

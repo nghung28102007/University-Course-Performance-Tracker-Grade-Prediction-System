@@ -23,7 +23,7 @@
         <p style="color: var(--text-secondary); margin-bottom: 16px;">
             Quét đa nguồn từ Internet (ưu tiên Production → Mock dự phòng) và đồng bộ điểm vào hệ thống.
         </p>
-        <button type="button" class="btn btn-primary" id="crawl-btn">🔄 Refresh from Web</button>
+        <button type="button" class="btn btn-primary" id="crawl-btn">🔄 Refresh Data (Cào dữ liệu &amp; Chạy AI)</button>
         <span id="crawl-status" style="margin-left: 12px; color: var(--text-secondary);"></span>
     </div>
 </div>
@@ -80,13 +80,17 @@ document.getElementById('crawl-btn').addEventListener('click', async () => {
     const btn = document.getElementById('crawl-btn');
     const status = document.getElementById('crawl-status');
     btn.disabled = true;
-    status.textContent = 'Đang cào dữ liệu...';
+    status.textContent = 'Đang cào & Chạy AI...';
     try {
-        const res = await fetch('/api/refresh-data');
+        const res = await fetch('/api/refresh-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
         const data = await res.json();
         if (res.ok && data.status === 'success') {
-            const label = data.data_source === 'Production-Real' ? '✓ Production-Real' : '⚠ Backup-Mock';
-            status.textContent = `${label} — ${data.records_synced} bản ghi đồng bộ (${data.source_label})`;
+            const atRisk65 = (data.predictions_65 || []).filter(p => p.status === 'At-risk').length;
+            status.textContent = `✓ ${data.records_crawled} cào · ${data.records_synced} lưu DB · ${data.normalized_synced} đồng bộ · ${atRisk65} cảnh báo mốc 65`;
         } else {
             status.textContent = 'Lỗi: ' + (data.message || 'unknown');
         }

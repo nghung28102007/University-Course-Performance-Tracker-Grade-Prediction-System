@@ -2,9 +2,19 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h2>Performance Dashboard</h2>
-    <p class="page-subtitle">Academic overview and analytics for Asia University</p>
+<div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+    <div>
+        <h2>Performance Dashboard</h2>
+        <p class="page-subtitle">Academic overview and analytics for Asia University</p>
+    </div>
+    {% if session.get('user_role') in ('admin', 'instructor') %}
+    <div>
+        <button type="button" class="btn btn-primary" id="refresh-data-btn">
+            🔄 Refresh Data (Cào dữ liệu &amp; Chạy AI)
+        </button>
+        <span id="refresh-status" style="display: block; margin-top: 8px; color: var(--text-secondary); font-size: 0.85rem;"></span>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Semester Tabs (Critical Filter — queries Semesters table directly) -->
@@ -24,35 +34,35 @@
 </div>
 
 <!-- Stats Grid -->
-<div class="stats-grid">
+<div class="stats-grid" id="stats-grid">
     <div class="stat-card">
         <div class="stat-label">Total Students</div>
-        <div class="stat-value accent">{{ stats.total_students }}</div>
+        <div class="stat-value accent" id="stat-total-students">{{ stats.total_students }}</div>
         <div class="stat-change">Enrolled & active</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">Courses</div>
-        <div class="stat-value teal">{{ stats.total_courses }}</div>
+        <div class="stat-value teal" id="stat-total-courses">{{ stats.total_courses }}</div>
         <div class="stat-change">{{ semester_label }}</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">Average GPA</div>
-        <div class="stat-value {% if stats.avg_gpa >= 3.0 %}success{% elif stats.avg_gpa >= 2.0 %}warning{% else %}danger{% endif %}">{{ "%.2f"|format(stats.avg_gpa) }}</div>
+        <div class="stat-value {% if stats.avg_gpa >= 3.0 %}success{% elif stats.avg_gpa >= 2.0 %}warning{% else %}danger{% endif %}" id="stat-avg-gpa">{{ "%.2f"|format(stats.avg_gpa) }}</div>
         <div class="stat-change">4.0 Scale</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">At-Risk Students</div>
-        <div class="stat-value {% if stats.at_risk_count == 0 %}success{% else %}danger{% endif %}">{{ stats.at_risk_count }}</div>
+        <div class="stat-value {% if stats.at_risk_count == 0 %}success{% else %}danger{% endif %}" id="stat-at-risk">{{ stats.at_risk_count }}</div>
         <div class="stat-change">GPA &lt; 2.0</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">ML At-Risk Alerts</div>
-        <div class="stat-value {% if stats.ml_at_risk_count == 0 %}success{% else %}danger{% endif %}">{{ stats.ml_at_risk_count }}</div>
+        <div class="stat-value {% if stats.ml_at_risk_count == 0 %}success{% else %}danger{% endif %}" id="stat-ml-at-risk">{{ stats.ml_at_risk_count }}</div>
         <div class="stat-change">Predicted final &lt; 60</div>
     </div>
     <div class="stat-card">
         <div class="stat-label">Pass Rate</div>
-        <div class="stat-value success">{{ stats.pass_rate }}%</div>
+        <div class="stat-value success" id="stat-pass-rate">{{ stats.pass_rate }}%</div>
         <div class="stat-change">SP4 Analytics</div>
     </div>
 </div>
@@ -87,7 +97,7 @@
                     <th>Status</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="rankings-tbody">
                 {% for r in rankings %}
                 <tr>
                     <td>
@@ -153,5 +163,100 @@
         </table>
     </div>
 </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if session.get('user_role') in ('admin', 'instructor') %}
+<script>
+(function () {
+    const btn = document.getElementById('refresh-data-btn');
+    const status = document.getElementById('refresh-status');
+    if (!btn) return;
+
+    const semesterId = {{ current_semester|tojson }};
+
+    function gpaColor(gpa) {
+        if (gpa >= 3.5) return 'var(--success)';
+        if (gpa >= 2.5) return 'var(--accent-secondary)';
+        if (gpa >= 2.0) return 'var(--warning)';
+        return 'var(--danger)';
+    }
+
+    function statusBadge(gpa) {
+        if (gpa >= 3.5) return '<span class="badge badge-success">Excellent</span>';
+        if (gpa >= 2.5) return '<span class="badge badge-accent">Good</span>';
+        if (gpa >= 2.0) return '<span class="badge badge-warning">Fair</span>';
+        return '<span class="badge badge-danger">At Risk</span>';
+    }
+
+    function rankClass(rank) {
+        if (rank === 1) return 'rank-1';
+        if (rank === 2) return 'rank-2';
+        if (rank === 3) return 'rank-3';
+        return 'rank-other';
+    }
+
+    function renderRankings(rankings) {
+        const tbody = document.getElementById('rankings-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = rankings.map(r => `
+            <tr>
+                <td><span class="rank-number ${rankClass(r.rank)}">${r.rank}</span></td>
+                <td><strong>${r.student_name}</strong></td>
+                <td style="color: var(--text-secondary);">${r.student_code}</td>
+                <td><span style="font-weight: 700; color: ${gpaColor(r.gpa)};">${Number(r.gpa).toFixed(2)}</span></td>
+                <td>${Number(r.avg_score).toFixed(1)}</td>
+                <td>${r.total_credits}</td>
+                <td>${statusBadge(r.gpa)}</td>
+            </tr>
+        `).join('');
+    }
+
+    function updateStats(stats) {
+        document.getElementById('stat-total-students').textContent = stats.total_students;
+        document.getElementById('stat-total-courses').textContent = stats.total_courses;
+        const gpaEl = document.getElementById('stat-avg-gpa');
+        gpaEl.textContent = Number(stats.avg_gpa).toFixed(2);
+        gpaEl.className = 'stat-value ' + (stats.avg_gpa >= 3 ? 'success' : stats.avg_gpa >= 2 ? 'warning' : 'danger');
+        document.getElementById('stat-at-risk').textContent = stats.at_risk_count;
+        document.getElementById('stat-ml-at-risk').textContent = stats.ml_at_risk_count;
+        document.getElementById('stat-pass-rate').textContent = stats.pass_rate + '%';
+    }
+
+    btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        btn.textContent = 'Đang cào & Chạy AI...';
+        status.textContent = '';
+        try {
+            const res = await fetch('/api/refresh-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ semester_id: semesterId }),
+            });
+            const data = await res.json();
+            if (res.ok && data.status === 'success') {
+                renderRankings(data.rankings || []);
+                updateStats(data.stats || {});
+                if (data.charts) {
+                    const hist = document.getElementById('chart-histogram');
+                    const rank = document.getElementById('chart-rankings');
+                    if (hist && data.charts.histogram) hist.src = data.charts.histogram;
+                    if (rank && data.charts.rankings) rank.src = data.charts.rankings;
+                }
+                const atRisk65 = (data.predictions_65 || []).filter(p => p.status === 'At-risk').length;
+                status.textContent = `✓ ${data.records_crawled} bản ghi cào · ${data.records_synced} lưu DB · ${data.normalized_synced} đồng bộ · ${atRisk65} cảnh báo mốc 65`;
+            } else {
+                status.textContent = 'Lỗi: ' + (data.message || 'unknown');
+            }
+        } catch (e) {
+            status.textContent = 'Lỗi kết nối: ' + e;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🔄 Refresh Data (Cào dữ liệu & Chạy AI)';
+        }
+    });
+})();
+</script>
 {% endif %}
 {% endblock %}
